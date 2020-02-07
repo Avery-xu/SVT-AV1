@@ -30,6 +30,16 @@
 #include "EbLog.h"
 #include "EbCommonUtils.h"
 
+void save_Y_to_file(char *filename, EbByte buffer_y,
+                    uint16_t width, uint16_t height,
+                    uint16_t stride_y,
+                    uint16_t origin_y, uint16_t origin_x);
+
+void use_scaled_rec_refs_if_needed(PictureControlSet *pcs_ptr,
+                                   EbPictureBufferDesc *input_picture_ptr,
+                                   EbReferenceObject *ref_obj,
+                                   EbPictureBufferDesc **ref_pic);
+
 EbErrorType generate_md_stage_0_cand(SuperBlock *sb_ptr, ModeDecisionContext *context_ptr,
                                      uint32_t *         fast_candidate_total_count,
                                      PictureControlSet *pcs_ptr);
@@ -2302,10 +2312,11 @@ void md_stage_0(
             ? MAX_CU_COST
             : *(candidate_buffer_ptr_array_base[highest_cost_index]->fast_cost_ptr);
 }
-void md_full_pel_search(PictureControlSet *pcs_ptr, ModeDecisionContext *context_ptr,
+void md_full_pel_search(ModeDecisionContext *context_ptr,
                                    EbPictureBufferDesc *input_picture_ptr,
-                                   uint32_t input_origin_index, EbBool use_ssd, uint8_t list_idx,
-                                   int8_t ref_idx, int16_t mvx, int16_t mvy,
+                                   EbPictureBufferDesc *ref_pic,
+                                   uint32_t input_origin_index, EbBool use_ssd,
+                                   int16_t mvx, int16_t mvy,
                                    int16_t search_position_start_x, int16_t search_position_end_x,
                                    int16_t search_position_start_y, int16_t search_position_end_y,
                                    int16_t search_step, int16_t *best_mvx, int16_t *best_mvy,
@@ -2908,6 +2919,14 @@ void    predictive_me_search(PictureControlSet *pcs_ptr, ModeDecisionContext *co
                 EbPictureBufferDesc *ref_pic =
                     hbd_mode_decision ? ref_obj->reference_picture16bit : ref_obj->reference_picture;
 
+                // -------
+	            // Use scaled references if resolution of the reference is different than the input
+	            // -------
+	            use_scaled_rec_refs_if_needed(pcs_ptr,
+	                                          input_picture_ptr,
+	                                          ref_obj,
+	                                          &ref_pic);
+
                 uint32_t ref_origin_index =
                     ref_pic->origin_x + (context_ptr->blk_origin_x + (me_mv_x >> 3)) +
                     (context_ptr->blk_origin_y + (me_mv_y >> 3) + ref_pic->origin_y) *
@@ -2988,12 +3007,6 @@ void    predictive_me_search(PictureControlSet *pcs_ptr, ModeDecisionContext *co
 
                 for (int8_t mvp_index = 0; mvp_index < mvp_count; mvp_index++) {
                     // MVP Distortion
-                    EbReferenceObject *ref_obj =
-                        pcs_ptr->ref_pic_ptr_array[list_idx][ref_idx]->object_ptr;
-                    EbPictureBufferDesc *ref_pic = hbd_mode_decision
-                                                       ? ref_obj->reference_picture16bit
-                                                       : ref_obj->reference_picture;
-
                     uint32_t ref_origin_index =
                         ref_pic->origin_x +
                         (context_ptr->blk_origin_x + (mvp_x_array[mvp_index] >> 3)) +
@@ -3047,27 +3060,27 @@ void    predictive_me_search(PictureControlSet *pcs_ptr, ModeDecisionContext *co
                 best_mvp_x = (best_mvp_x + 4) & ~0x07;
                 best_mvp_y = (best_mvp_y + 4) & ~0x07;
 
-                md_full_pel_search(pcs_ptr,
-                                   context_ptr,
-                                   input_picture_ptr,
-                                   input_origin_index,
+                md_full_pel_search(context_ptr,
+                                              input_picture_ptr,
+                                              ref_pic,
+                                              input_origin_index,
 #if ENABLE_PME_SAD
-                                   0,
+                                   			  0,
 #else
-                                   use_ssd,
+                                              use_ssd,
 #endif
-                                   list_idx,
-                                   ref_idx,
-                                   best_mvp_x,
-                                   best_mvp_y,
-                                   -(context_ptr->pred_me_full_pel_search_width >> 1),
-                                   +(context_ptr->pred_me_full_pel_search_width >> 1),
-                                   -(context_ptr->pred_me_full_pel_search_height >> 1),
-                                   +(context_ptr->pred_me_full_pel_search_height >> 1),
-                                   8,
-                                   &best_search_mvx,
-                                   &best_search_mvy,
-                                   &best_search_distortion);
+											  list_idx,
+			                                  ref_idx,
+			                                  best_mvp_x,
+			                                  best_mvp_y,
+			                                  -(context_ptr->pred_me_full_pel_search_width >> 1),
+			                                  +(context_ptr->pred_me_full_pel_search_width >> 1),
+			                                  -(context_ptr->pred_me_full_pel_search_height >> 1),
+			                                  +(context_ptr->pred_me_full_pel_search_height >> 1),
+			                                  8,
+			                                  &best_search_mvx,
+			                                  &best_search_mvy,
+			                                  &best_search_distortion);
 
                 EbBool exit_predictive_me_sub_pel;
 
